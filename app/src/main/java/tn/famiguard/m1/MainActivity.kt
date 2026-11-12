@@ -3,10 +3,11 @@ package tn.famiguard.m1
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -81,10 +84,12 @@ private fun StatusPill(text: String, dot: Color, bg: Color, fg: Color) = Row(
 }
 
 @Composable
-private fun SoftCard(bg: Color = Brand.surface, pad: Int = 16, content: @Composable ColumnScope.() -> Unit) =
+private fun SoftCard(bg: Color = Brand.surface, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) =
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(bg)
-            .border(1.dp, Brand.line, RoundedCornerShape(18.dp)).padding(pad.dp), content = content
+            .border(1.dp, Brand.line, RoundedCornerShape(18.dp))
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(16.dp), content = content
     )
 
 @Composable
@@ -127,10 +132,7 @@ fun RolePicker(onPick: (String) -> Unit) = Column(
 @Composable
 private fun RoleCard(emoji: String, title: String, sub: String, accent: Color, onClick: () -> Unit) = Row(
     Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brand.surface)
-        .border(1.dp, Brand.line, RoundedCornerShape(18.dp))
-        .then(Modifier.clickable(
-            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(), indication = null
-        ) { onClick() }).padding(18.dp),
+        .border(1.dp, Brand.line, RoundedCornerShape(18.dp)).clickable { onClick() }.padding(18.dp),
     verticalAlignment = Alignment.CenterVertically
 ) {
     Box(Modifier.size(46.dp).clip(RoundedCornerShape(13.dp)).background(accent.copy(alpha = 0.16f)),
@@ -143,13 +145,29 @@ private fun RoleCard(emoji: String, title: String, sub: String, accent: Color, o
     Text("→", fontSize = 20.sp, color = accent)
 }
 
-/* ============ PARENT : application complète (démo) ============ */
+/* ============ PARENT ============ */
+private data class AppItem(val label: String, val time: String, val frac: Float, var blocked: Boolean)
+
 @Composable
 fun ParentApp(onReset: () -> Unit) {
     var tab by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<Alert?>(null) }
+    var showApps by remember { mutableStateOf(false) }
+
+    val apps = remember {
+        mutableStateListOf(
+            AppItem("TikTok", "2h05", 1.0f, false),
+            AppItem("Instagram", "1h20", 0.64f, false),
+            AppItem("WhatsApp", "47 min", 0.37f, false),
+            AppItem("YouTube", "38 min", 0.30f, false),
+            AppItem("Snapchat", "22 min", 0.18f, false),
+            AppItem("Chrome", "15 min", 0.12f, false),
+        )
+    }
+    val net = remember { mutableStateMapOf("cut" to false, "social" to false, "browser" to false, "bedtime" to true) }
 
     if (selected != null) { AlertDetail(selected!!) { selected = null }; return }
+    if (showApps) { AppsScreen(apps) { showApps = false }; return }
 
     Scaffold(
         containerColor = Brand.bg,
@@ -173,8 +191,8 @@ fun ParentApp(onReset: () -> Unit) {
     ) { pad ->
         Box(Modifier.padding(pad)) {
             when (tab) {
-                0 -> ParentHome(onOpenAlert = { selected = it }, onLocation = { tab = 2 }, onReset = onReset)
-                1 -> AlertsList(onOpenAlert = { selected = it })
+                0 -> ParentHome(apps, net, { selected = it }, { showApps = true }, { tab = 2 }, onReset)
+                1 -> AlertsList { selected = it }
                 2 -> LocationScreen()
                 else -> StatsScreen()
             }
@@ -183,21 +201,34 @@ fun ParentApp(onReset: () -> Unit) {
 }
 
 @Composable
-private fun ParentHome(onOpenAlert: (Alert) -> Unit, onLocation: () -> Unit, onReset: () -> Unit) {
+private fun ParentHome(
+    apps: List<AppItem>, net: MutableMap<String, Boolean>,
+    onOpenAlert: (Alert) -> Unit, onOpenApps: () -> Unit, onLocation: () -> Unit, onReset: () -> Unit
+) {
     val last = Demo.alerts.first()
+    val blockedCount = apps.count { it.blocked }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { TopBar("Sofia · 14 ans", todayLabel()) { StatusPill("En ligne", Brand.green, Brand.greenBg, Brand.green) } }
         item {
-            SoftCard {
-                Eyebrow("Temps d'écran aujourd'hui"); Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("4h12", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
-                    Spacer(Modifier.width(10.dp))
-                    Text("+45 min vs hier", fontSize = 12.5.sp, color = Brand.red, modifier = Modifier.padding(bottom = 8.dp))
+            SoftCard(onClick = onOpenApps) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Eyebrow("Temps d'écran aujourd'hui"); Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("4h12", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
+                            Spacer(Modifier.width(10.dp))
+                            Text("+45 min", fontSize = 12.5.sp, color = Brand.red, modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                    }
+                    Text("›", fontSize = 30.sp, color = Brand.muted)
                 }
+                Spacer(Modifier.height(10.dp))
+                Text("Voir les applications · ${apps.size} apps" + if (blockedCount > 0) " · $blockedCount bloquée(s)" else "",
+                    fontSize = 12.5.sp, color = Brand.teal)
             }
         }
+        item { InternetCard(net) }
         item { Eyebrow("Dernière alerte") }
         item { AlertRow(last) { onOpenAlert(last) } }
         item { Eyebrow("Localisation") }
@@ -206,6 +237,72 @@ private fun ParentHome(onOpenAlert: (Alert) -> Unit, onLocation: () -> Unit, onR
             Spacer(Modifier.height(4.dp))
             Text("Démonstration — données d'exemple.", fontSize = 11.5.sp, color = Brand.muted, textAlign = TextAlign.Center)
             TextButton(onReset, Modifier.fillMaxWidth()) { Text("Changer de rôle", color = Brand.muted) }
+        }
+    }
+}
+
+@Composable
+private fun InternetCard(net: MutableMap<String, Boolean>) {
+    val cut = net["cut"] == true
+    SoftCard(if (cut) Brand.redBg else Brand.surface) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🌐", fontSize = 18.sp); Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Accès Internet", fontWeight = FontWeight.Bold, color = Brand.ink)
+                Text(if (cut) "Internet coupé pour l'enfant" else "Internet autorisé", fontSize = 12.sp,
+                    color = if (cut) Brand.red else Brand.muted)
+            }
+            Switch(checked = cut, onCheckedChange = { net["cut"] = it })
+        }
+        if (!cut) {
+            Spacer(Modifier.height(6.dp))
+            NetRow("Bloquer les réseaux sociaux", net, "social")
+            NetRow("Bloquer le navigateur", net, "browser")
+            NetRow("Couper Internet la nuit (21h–7h)", net, "bedtime")
+        }
+    }
+}
+
+@Composable
+private fun NetRow(label: String, net: MutableMap<String, Boolean>, key: String) = Row(
+    Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically
+) {
+    Text(label, fontSize = 13.sp, color = Brand.ink, modifier = Modifier.weight(1f))
+    Switch(checked = net[key] == true, onCheckedChange = { net[key] = it })
+}
+
+@Composable
+private fun AppsScreen(apps: MutableList<AppItem>, onBack: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 18.dp, 16.dp, 28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { TextButton(onBack, contentPadding = PaddingValues(0.dp)) { Text("← Retour", color = Brand.teal) } }
+        item {
+            Column {
+                Text("Applications utilisées", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
+                Text("Appuie sur « Bloquer » pour mettre une appli en pause sur le téléphone de Sofia", fontSize = 12.5.sp, color = Brand.muted)
+            }
+        }
+        items(apps.size) { i ->
+            val a = apps[i]
+            SoftCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)).background(Brand.surface2),
+                        contentAlignment = Alignment.Center) { Text(a.label.take(1), fontWeight = FontWeight.Bold, color = Brand.teal) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(a.label, fontWeight = FontWeight.SemiBold, color = Brand.ink)
+                            if (a.blocked) { Spacer(Modifier.width(8.dp)); StatusPill("Bloquée", Brand.red, Brand.redBg, Brand.red) }
+                        }
+                        Text(a.time, fontSize = 12.5.sp, color = Brand.muted)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    if (a.blocked) OutlinedButton({ apps[i] = a.copy(blocked = false) }, shape = RoundedCornerShape(11.dp)) { Text("Débloquer") }
+                    else Button({ apps[i] = a.copy(blocked = true) }, shape = RoundedCornerShape(11.dp)) { Text("Bloquer") }
+                }
+                Spacer(Modifier.height(10.dp))
+                UsageBar(a.frac, if (a.blocked) Brand.red else Brand.teal)
+            }
         }
     }
 }
@@ -227,15 +324,11 @@ private fun AlertsList(onOpenAlert: (Alert) -> Unit) {
 @Composable
 private fun AlertRow(a: Alert, onClick: () -> Unit) = Column(
     Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brand.surface)
-        .border(1.dp, Brand.line, RoundedCornerShape(18.dp))
-        .then(Modifier.clickable(
-            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(), indication = null
-        ) { onClick() }).padding(14.dp)
+        .border(1.dp, Brand.line, RoundedCornerShape(18.dp)).clickable { onClick() }.padding(14.dp)
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         StatusPill(a.category, sevColor(a.severity), sevBg(a.severity), sevColor(a.severity))
-        Spacer(Modifier.weight(1f))
-        Text(a.time, fontSize = 11.5.sp, color = Brand.muted)
+        Spacer(Modifier.weight(1f)); Text(a.time, fontSize = 11.5.sp, color = Brand.muted)
     }
     Spacer(Modifier.height(8.dp))
     Text("« ${a.excerpt} »", fontSize = 14.sp, color = Brand.ink)
@@ -247,11 +340,7 @@ private fun AlertRow(a: Alert, onClick: () -> Unit) = Column(
 private fun AlertDetail(a: Alert, onBack: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 18.dp, 16.dp, 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onBack, contentPadding = PaddingValues(0.dp)) { Text("← Retour", color = Brand.teal) }
-            }
-        }
+        item { TextButton(onBack, contentPadding = PaddingValues(0.dp)) { Text("← Retour", color = Brand.teal) } }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusPill(a.severity, sevColor(a.severity), sevBg(a.severity), sevColor(a.severity))
@@ -263,25 +352,17 @@ private fun AlertDetail(a: Alert, onBack: () -> Unit) {
             SoftCard(sevBg(a.severity)) {
                 Eyebrow("Message détecté"); Spacer(Modifier.height(8.dp))
                 Text("« ${a.excerpt} »", fontSize = 15.sp, color = Brand.ink)
-                Spacer(Modifier.height(8.dp))
-                Text("${a.app} · ${a.sender}", fontSize = 12.sp, color = Brand.muted)
+                Spacer(Modifier.height(8.dp)); Text("${a.app} · ${a.sender}", fontSize = 12.sp, color = Brand.muted)
             }
         }
         item {
             SoftCard {
                 Eyebrow("Ce que Julia a détecté"); Spacer(Modifier.height(8.dp))
-                a.whatDetected.forEach {
-                    Row(Modifier.padding(vertical = 3.dp)) {
-                        Text("•  ", color = Brand.teal); Text(it, fontSize = 13.5.sp, color = Brand.ink)
-                    }
-                }
+                a.whatDetected.forEach { Row(Modifier.padding(vertical = 3.dp)) { Text("•  ", color = Brand.teal); Text(it, fontSize = 13.5.sp, color = Brand.ink) } }
             }
         }
         item {
-            SoftCard {
-                Eyebrow("Ce que cela peut signifier"); Spacer(Modifier.height(8.dp))
-                Text(a.whatItMeans, fontSize = 13.5.sp, color = Brand.ink)
-            }
+            SoftCard { Eyebrow("Ce que cela peut signifier"); Spacer(Modifier.height(8.dp)); Text(a.whatItMeans, fontSize = 13.5.sp, color = Brand.ink) }
         }
         item {
             SoftCard(Brand.greenBg) {
@@ -289,9 +370,7 @@ private fun AlertDetail(a: Alert, onBack: () -> Unit) {
                 a.recommendations.forEachIndexed { i, r ->
                     Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
                         Box(Modifier.size(22.dp).clip(RoundedCornerShape(50)).background(Brand.green),
-                            contentAlignment = Alignment.Center) {
-                            Text("${i + 1}", color = Brand.tealInk, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                            contentAlignment = Alignment.Center) { Text("${i + 1}", color = Brand.tealInk, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                         Spacer(Modifier.width(10.dp)); Text(r, fontSize = 13.5.sp, color = Brand.ink)
                     }
                 }
@@ -300,18 +379,12 @@ private fun AlertDetail(a: Alert, onBack: () -> Unit) {
         item {
             SoftCard {
                 Eyebrow("Comment en parler"); Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(Brand.surface2).padding(12.dp)) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Brand.surface2).padding(12.dp)) {
                     Text(a.script, fontSize = 13.5.sp, color = Brand.ink)
                 }
             }
         }
-        item {
-            SoftCard {
-                Eyebrow("Besoin d'aide ?"); Spacer(Modifier.height(6.dp))
-                Text(Demo.helpline, fontSize = 12.5.sp, color = Brand.muted)
-            }
-        }
+        item { SoftCard { Eyebrow("Besoin d'aide ?"); Spacer(Modifier.height(6.dp)); Text(Demo.helpline, fontSize = 12.5.sp, color = Brand.muted) } }
     }
 }
 
@@ -329,13 +402,12 @@ private fun LocationScreen() {
                     Text("Position de Sofia", fontSize = 12.5.sp, color = Brand.muted)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("GPS coupé", fontSize = 11.sp, color = Brand.muted)
-                    Spacer(Modifier.width(6.dp))
+                    Text("GPS coupé", fontSize = 11.sp, color = Brand.muted); Spacer(Modifier.width(6.dp))
                     Switch(checked = gpsOff, onCheckedChange = { gpsOff = it })
                 }
             }
         }
-        item { MapView(loc) }
+        item { MapPanel(loc) }
         item { LocationCard(loc, compact = false, onClick = null) }
         item {
             Text("Démonstration. Dans la vraie version, la position vient du GPS du téléphone de l'enfant ; sans GPS, la dernière position connue est affichée.",
@@ -345,27 +417,36 @@ private fun LocationScreen() {
 }
 
 @Composable
-private fun MapView(loc: ChildLocation) {
+private fun MapPanel(loc: ChildLocation) {
+    val road = Color(0xFF32415C); val block = Color(0xFF1E2A3E); val water = Color(0xFF123247); val park = Color(0xFF17351F)
     BoxWithConstraints(
-        Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(18.dp)).background(Brand.surface2)
-            .border(1.dp, Brand.line, RoundedCornerShape(18.dp))
+        Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, Brand.line, RoundedCornerShape(18.dp))
     ) {
-        // "rues" stylisées
-        Box(Modifier.fillMaxWidth().height(3.dp).align(Alignment.Center).background(Brand.line))
-        Box(Modifier.fillMaxHeight().width(3.dp).align(Alignment.Center).background(Brand.line))
-        Box(Modifier.fillMaxWidth().height(2.dp).offset(y = maxHeight * 0.75f).background(Brand.line))
-        Box(Modifier.fillMaxHeight().width(2.dp).offset(x = maxWidth * 0.25f).background(Brand.line))
-        // marqueur
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            drawRect(Color(0xFF151D2C))
+            val cx = 5; val cy = 4; val gx = w / cx; val gy = h / cy
+            for (i in 0 until cx) for (j in 0 until cy) {
+                drawRect(block, topLeft = Offset(i * gx + 5f, j * gy + 5f), size = Size(gx - 10f, gy - 10f))
+            }
+            drawRect(water, topLeft = Offset(0f, h * 0.80f), size = Size(w, h * 0.20f))
+            drawRect(park, topLeft = Offset(w * 0.62f, h * 0.08f), size = Size(w * 0.30f, h * 0.26f))
+            // avenues
+            drawLine(road, Offset(0f, h * 0.5f), Offset(w, h * 0.5f), strokeWidth = 7f)
+            drawLine(road, Offset(w * 0.5f, 0f), Offset(w * 0.5f, h), strokeWidth = 7f)
+            // itinéraire
+            drawLine(Brand.teal, Offset(w * 0.18f, h * 0.92f), Offset(w * 0.5f, h * 0.5f), strokeWidth = 5f)
+            drawLine(Brand.teal, Offset(w * 0.5f, h * 0.5f), Offset(w * loc.x, h * loc.y), strokeWidth = 5f)
+        }
         val mColor = if (loc.live) Brand.teal else Brand.amber
         Box(Modifier.offset(x = maxWidth * loc.x - 18.dp, y = maxHeight * loc.y - 18.dp)) {
             Box(Modifier.size(36.dp).clip(RoundedCornerShape(50)).background(mColor.copy(alpha = 0.25f)))
             Box(Modifier.size(16.dp).align(Alignment.Center).clip(RoundedCornerShape(50)).background(mColor)
                 .border(2.dp, Brand.bg, RoundedCornerShape(50)))
         }
-        StatusPill(
-            if (loc.live) "Position en temps réel" else "Dernière position connue",
-            mColor, Brand.surface, mColor
-        )
+        Box(Modifier.align(Alignment.TopStart).padding(10.dp)) {
+            StatusPill(if (loc.live) "Position en temps réel" else "Dernière position connue", mColor, Brand.surface, mColor)
+        }
     }
 }
 
@@ -373,9 +454,7 @@ private fun MapView(loc: ChildLocation) {
 private fun LocationCard(loc: ChildLocation, compact: Boolean, onClick: (() -> Unit)?) {
     val mod = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brand.surface)
         .border(1.dp, Brand.line, RoundedCornerShape(18.dp))
-        .then(if (onClick != null) Modifier.clickable(
-            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(), indication = null
-        ) { onClick() } else Modifier).padding(16.dp)
+        .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier).padding(16.dp)
     Column(mod) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("📍", fontSize = 20.sp); Spacer(Modifier.width(10.dp))
@@ -383,17 +462,11 @@ private fun LocationCard(loc: ChildLocation, compact: Boolean, onClick: (() -> U
                 Text(loc.address, fontWeight = FontWeight.SemiBold, color = Brand.ink)
                 Text("${loc.area} · ${loc.time}", fontSize = 12.sp, color = Brand.muted)
             }
-            if (!compact) StatusPill(
-                if (loc.live) "Live" else "GPS off",
-                if (loc.live) Brand.green else Brand.amber,
-                if (loc.live) Brand.greenBg else Brand.amberBg,
-                if (loc.live) Brand.green else Brand.amber
-            )
+            if (!compact) StatusPill(if (loc.live) "Live" else "GPS off",
+                if (loc.live) Brand.green else Brand.amber, if (loc.live) Brand.greenBg else Brand.amberBg,
+                if (loc.live) Brand.green else Brand.amber)
         }
-        if (!compact) {
-            Spacer(Modifier.height(10.dp))
-            Text("Précision ± ${loc.accuracyM} m", fontSize = 12.sp, color = Brand.muted)
-        }
+        if (!compact) { Spacer(Modifier.height(10.dp)); Text("Précision ± ${loc.accuracyM} m", fontSize = 12.sp, color = Brand.muted) }
     }
 }
 
@@ -416,10 +489,7 @@ private fun StatsScreen() {
             }
         }
         item {
-            SoftCard {
-                Eyebrow("Alertes par jour"); Spacer(Modifier.height(14.dp))
-                BarChart(Demo.alertsPerDay.map { it.toFloat() }, Demo.weekDays, Brand.red)
-            }
+            SoftCard { Eyebrow("Alertes par jour"); Spacer(Modifier.height(14.dp)); BarChart(Demo.alertsPerDay.map { it.toFloat() }, Demo.weekDays, Brand.red) }
         }
         item {
             SoftCard {
@@ -435,10 +505,7 @@ private fun StatsScreen() {
             }
         }
         item {
-            SoftCard {
-                Eyebrow("Temps d'écran par jour (min)"); Spacer(Modifier.height(14.dp))
-                BarChart(Demo.screenTimePerDay.map { it.toFloat() }, Demo.weekDays, Brand.teal)
-            }
+            SoftCard { Eyebrow("Temps d'écran par jour (min)"); Spacer(Modifier.height(14.dp)); BarChart(Demo.screenTimePerDay.map { it.toFloat() }, Demo.weekDays, Brand.teal) }
         }
     }
 }
@@ -454,15 +521,11 @@ private fun StatTile(value: String, label: String, accent: Color, modifier: Modi
 @Composable
 private fun BarChart(values: List<Float>, labels: List<String>, color: Color) {
     val max = (values.maxOrNull() ?: 1f).coerceAtLeast(1f)
-    Row(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Bottom) {
+    Row(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
         values.forEachIndexed { i, v ->
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Bottom) {
-                Box(Modifier.fillMaxWidth().fillMaxHeight((v / max).coerceIn(0.03f, 1f))
-                    .clip(RoundedCornerShape(6.dp)).background(color))
-                Spacer(Modifier.height(6.dp))
-                Text(labels.getOrElse(i) { "" }, fontSize = 10.sp, color = Brand.muted)
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                Box(Modifier.fillMaxWidth().fillMaxHeight((v / max).coerceIn(0.03f, 1f)).clip(RoundedCornerShape(6.dp)).background(color))
+                Spacer(Modifier.height(6.dp)); Text(labels.getOrElse(i) { "" }, fontSize = 10.sp, color = Brand.muted)
             }
         }
     }
@@ -505,12 +568,9 @@ fun ChildReal(onReset: () -> Unit) {
                 Eyebrow("Temps d'écran aujourd'hui"); Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(UsageRepository.formatDuration(total), fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
-                    Spacer(Modifier.width(10.dp))
-                    Text("${apps.size} apps", fontSize = 13.sp, color = Brand.muted, modifier = Modifier.padding(bottom = 8.dp))
+                    Spacer(Modifier.width(10.dp)); Text("${apps.size} apps", fontSize = 13.sp, color = Brand.muted, modifier = Modifier.padding(bottom = 8.dp))
                 }
-                if (apps.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp)); Text("La plus utilisée : ${apps.first().label}", fontSize = 12.5.sp, color = Brand.muted)
-                }
+                if (apps.isNotEmpty()) { Spacer(Modifier.height(10.dp)); Text("La plus utilisée : ${apps.first().label}", fontSize = 12.5.sp, color = Brand.muted) }
             }
         }
         if (hasUsage && apps.isEmpty()) item { Text("Aucun usage mesuré pour l'instant aujourd'hui.", color = Brand.muted, fontSize = 13.sp) }
@@ -519,10 +579,7 @@ fun ChildReal(onReset: () -> Unit) {
             val isBlocked = blocked.contains(app.packageName)
             SoftCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    app.icon?.let {
-                        Image(it.toBitmap(80, 80).asImageBitmap(), null, Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)))
-                        Spacer(Modifier.width(12.dp))
-                    }
+                    app.icon?.let { Image(it.toBitmap(80, 80).asImageBitmap(), null, Modifier.size(42.dp).clip(RoundedCornerShape(11.dp))); Spacer(Modifier.width(12.dp)) }
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(app.label, fontWeight = FontWeight.SemiBold, color = Brand.ink)
@@ -534,8 +591,7 @@ fun ChildReal(onReset: () -> Unit) {
                     if (isBlocked) OutlinedButton({ Prefs.toggleBlocked(ctx, app.packageName); blocked = Prefs.blocked(ctx) }, shape = RoundedCornerShape(11.dp)) { Text("Débloquer") }
                     else Button({ Prefs.toggleBlocked(ctx, app.packageName); blocked = Prefs.blocked(ctx) }, shape = RoundedCornerShape(11.dp)) { Text("Bloquer") }
                 }
-                Spacer(Modifier.height(10.dp))
-                UsageBar(app.millisToday.toFloat() / maxMs, if (isBlocked) Brand.red else Brand.teal)
+                Spacer(Modifier.height(10.dp)); UsageBar(app.millisToday.toFloat() / maxMs, if (isBlocked) Brand.red else Brand.teal)
             }
         }
         item {
