@@ -48,6 +48,13 @@ object Fb {
         )
     }
 
+
+    fun locationDoc(code: String) = family(code).collection("state").document("location")
+    fun setLocation(code: String, lat: Double, lng: Double, address: String) {
+        locationDoc(code).set(mapOf("lat" to lat, "lng" to lng, "address" to address, "at" to FieldValue.serverTimestamp()))
+        family(code).update("childLastSeen", FieldValue.serverTimestamp())
+    }
+
     fun recentAlerts(code: String) =
         alerts(code).orderBy("at", Query.Direction.DESCENDING).limit(30)
 }

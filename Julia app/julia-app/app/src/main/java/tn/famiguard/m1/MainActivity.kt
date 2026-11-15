@@ -1,8 +1,13 @@
 package tn.famiguard.m1
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -245,7 +250,7 @@ fun ParentApp(code: String, onReset: () -> Unit) {
                 0 -> ParentHome(code, model, total, usageApps.size, blocked.size, net, ::setNet, alerts.firstOrNull(),
                     { selected = it }, { showApps = true }, { tab = 2 }, onReset)
                 1 -> AlertsList(alerts) { selected = it }
-                2 -> LocationScreen()
+                2 -> LocationScreen(code)
                 else -> StatsScreen()
             }
         }
@@ -428,25 +433,54 @@ private fun AlertDetail(a: Alert, onBack: () -> Unit) {
 
 /* ============ Localisation (démo) ============ */
 @Composable
-private fun LocationScreen() {
-    var gpsOff by remember { mutableStateOf(false) }
-    val loc = if (gpsOff) Demo.lastKnown else Demo.location
+private fun LocationScreen(code: String) {
+    val ctx = LocalContext.current
+    var lat by remember { mutableStateOf<Double?>(null) }
+    var lng by remember { mutableStateOf<Double?>(null) }
+    var address by remember { mutableStateOf("") }
+    var updated by remember { mutableStateOf("") }
+    DisposableEffect(code) {
+        val reg = Fb.locationDoc(code).addSnapshotListener { d, _ ->
+            if (d != null && d.exists()) {
+                lat = d.getDouble("lat"); lng = d.getDouble("lng"); address = d.getString("address") ?: ""
+                updated = d.getTimestamp("at")?.toDate()?.let { SimpleDateFormat("HH:mm", Locale.FRENCH).format(it) } ?: ""
+            }
+        }
+        onDispose { reg.remove() }
+    }
+    val has = lat != null && lng != null
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Localisation", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
-                    Text("Position de l'enfant", fontSize = 12.5.sp, color = Brand.muted)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("GPS coupé", fontSize = 11.sp, color = Brand.muted); Spacer(Modifier.width(6.dp))
-                    Switch(checked = gpsOff, onCheckedChange = { gpsOff = it })
+            Column {
+                Text("Localisation", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand.ink)
+                Text("Position de l'enfant", fontSize = 12.5.sp, color = Brand.muted)
+            }
+        }
+        if (!has) item {
+            SoftCard { Text("En attente de la position… Sur le téléphone de l'enfant : le GPS doit être activé et l'autorisation « localisation » donnée dans Julia.", color = Brand.muted, fontSize = 13.sp) }
+        } else {
+            val loc = ChildLocation(address.ifBlank { "Position" }, "", if (updated.isBlank()) "à l'instant" else "à $updated", 15, true, 0.5f, 0.45f)
+            item { MapPanel(loc) }
+            item {
+                SoftCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("\uD83D\uDCCD", fontSize = 20.sp); Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(address.ifBlank { "Position de l'enfant" }, fontWeight = FontWeight.SemiBold, color = Brand.ink)
+                            Text("%.5f, %.5f".format(lat, lng) + if (updated.isNotBlank()) " · $updated" else "", fontSize = 12.sp, color = Brand.muted)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button({
+                        runCatching {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng(Enfant)")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }.onFailure {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps?q=$lat,$lng")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp)) { Text("Ouvrir dans Google Maps") }
                 }
             }
         }
-        item { MapPanel(loc) }
-        item { LocationCard(loc, false, null) }
-        item { Text("Démonstration. La localisation réelle (GPS du téléphone enfant) arrive dans une prochaine étape.", fontSize = 11.5.sp, color = Brand.muted) }
     }
 }
 
@@ -551,8 +585,10 @@ fun ChildReal(code: String, onReset: () -> Unit) {
     val maxMs = (apps.maxOfOrNull { it.millisToday } ?: 1L).coerceAtLeast(1L)
     var blocked by remember(tick) { mutableStateOf(Prefs.blocked(ctx)) }
     val ok = hasUsage && accOn
+    val locOk = remember(tick) { LocationUploader.hasPermission(ctx) }
+    val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
-    LaunchedEffect(ok) { if (hasUsage) { UsageUploadWorker.schedule(ctx); UsageUploadWorker.runNow(ctx) } }
+    LaunchedEffect(ok, locOk) { if (hasUsage) { UsageUploadWorker.schedule(ctx); UsageUploadWorker.runNow(ctx) } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -587,8 +623,12 @@ fun ChildReal(code: String, onReset: () -> Unit) {
                 }
             }
         }
-        item { OutlinedButton({ UsageUploadWorker.runNow(ctx) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp)) { Text("Envoyer maintenant") } }
-        if (apps.isNotEmpty()) item { Eyebrow("Applications") }
+        if (!locOk) item {
+            SetupCard("3", "Partager la position", "Pour que tes parents voient où tu es en cas de besoin.") {
+                locLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            }
+        }
+        if (apps.isNotEmpty()) item { Eyebrow("Applications bloquées et temps d'écran") }
         items(apps, key = { it.packageName }) { app ->
             val isBlocked = blocked.contains(app.packageName)
             SoftCard {
@@ -605,8 +645,7 @@ fun ChildReal(code: String, onReset: () -> Unit) {
         }
         item {
             Spacer(Modifier.height(6.dp))
-            Text("Ce téléphone est protégé par tes parents. Le contenu des messages et les photos ne sont pas lus pour le suivi du temps.", fontSize = 11.5.sp, color = Brand.muted, textAlign = TextAlign.Center)
-            TextButton(onReset, Modifier.fillMaxWidth()) { Text("Délier / changer de rôle", color = Brand.muted) }
+            Text("Ce téléphone est protégé par tes parents. Les réglages sont gérés depuis leur téléphone.", fontSize = 11.5.sp, color = Brand.muted, textAlign = TextAlign.Center)
         }
     }
 }

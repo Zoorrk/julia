@@ -27,9 +27,15 @@ class BlockAccessibilityService : AccessibilityService() {
         blocked = Prefs.blocked(this)
         val code = Prefs.familyCode(this) ?: return
         reg = Fb.rulesDoc(code).addSnapshotListener { snap, _ ->
+            snap ?: return@addSnapshotListener
             @Suppress("UNCHECKED_CAST")
-            val list = (snap?.get("blocked") as? List<String>) ?: return@addSnapshotListener
-            blocked = list.toSet()
+            val list = (snap.get("blocked") as? List<String>) ?: emptyList()
+            @Suppress("UNCHECKED_CAST")
+            val net = (snap.get("net") as? Map<String, Boolean>) ?: emptyMap()
+            val eff = list.toMutableSet()
+            if (net["browser"] == true) eff += Packages.browsers
+            if (net["social"] == true) eff += Packages.social
+            blocked = eff
             Prefs.setBlocked(this, blocked)
         }
     }

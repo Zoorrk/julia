@@ -19,6 +19,7 @@ class UsageUploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         val total = list.sumOf { it.millisToday }
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         Fb.uploadUsage(code, date, total, apps, "${Build.MANUFACTURER} ${Build.MODEL}")
+        LocationUploader.upload(applicationContext)
         return Result.success()
     }
 
