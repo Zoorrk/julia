@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "262403694999",
+    "project_id": "julia-27722",
+    "storage_bucket": "julia-27722.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:262403694999:android:68d31ca26fd7a26b3fe4d2",
+        "android_client_info": {
+          "package_name": "tn.famiguard.m1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzwoE3C00yLsukgWVgmkW8VdgJvw35I0k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
