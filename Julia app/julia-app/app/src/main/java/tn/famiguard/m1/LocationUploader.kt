@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
+import android.location.Location
 import android.location.LocationManager
 import androidx.core.content.ContextCompat
 import java.util.Locale
@@ -24,7 +25,12 @@ object LocationUploader {
             providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
                 .maxByOrNull { it.time }
         } catch (e: SecurityException) { null } ?: return
+        push(ctx, loc)
+    }
 
+    /** Envoie une position précise (utilisé par le service temps réel et par upload()). */
+    fun push(ctx: Context, loc: Location) {
+        val code = Prefs.familyCode(ctx) ?: return
         val address = runCatching {
             @Suppress("DEPRECATION")
             Geocoder(ctx, Locale.FRENCH).getFromLocation(loc.latitude, loc.longitude, 1)

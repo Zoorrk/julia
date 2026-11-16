@@ -589,6 +589,7 @@ fun ChildReal(code: String, onReset: () -> Unit) {
     val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
     LaunchedEffect(ok, locOk) { if (hasUsage) { UsageUploadWorker.schedule(ctx); UsageUploadWorker.runNow(ctx) } }
+    LaunchedEffect(locOk) { if (locOk) LocationService.start(ctx) }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -625,7 +626,12 @@ fun ChildReal(code: String, onReset: () -> Unit) {
         }
         if (!locOk) item {
             SetupCard("3", "Partager la position", "Pour que tes parents voient où tu es en cas de besoin.") {
-                locLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                locLauncher.launch(
+                    if (android.os.Build.VERSION.SDK_INT >= 33)
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)
+                    else
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
             }
         }
         if (apps.isNotEmpty()) item { Eyebrow("Applications bloquées et temps d'écran") }

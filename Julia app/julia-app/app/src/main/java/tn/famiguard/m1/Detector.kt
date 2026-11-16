@@ -30,6 +30,24 @@ object Detector {
             "on se voit", "tu habites ou", "t as quel age",
             "send me a photo", "keep it secret", "don t tell your parents", "where do you live", "how old are you",
             "3malli photo", "ab3athli taswira", "ma t9olech l omok"
+        ),
+        // Contenu adulte / pornographique : sites connus + termes. S'applique aux adresses
+        // et pages affichées dans le navigateur (lues en direct), comme à tout autre écran.
+        "Contenu adulte" to listOf(
+            // sites connus (détectés dès que l'adresse ou un lien apparaît à l'écran)
+            "pornhub", "xvideos", "xnxx", "xhamster", "redtube", "youporn", "onlyfans",
+            "brazzers", "chaturbate", "stripchat", "spankbang", "hqporner", "porn300",
+            "youjizz", "tube8", "sex.com", "livejasmin", "fansly",
+            // termes génériques FR / EN
+            "porno", "pornographie", "pornographique", "porn", "hardcore porn", "sexe explicite",
+            "nude", "nudes", "hentai", "camgirl", "escort", "x rated", "adult video",
+            // arabizi / arabe
+            "jins", "9a7ba", "fضيحة", "sa7ki jinsi", "film jins"
+        ),
+        // Drogue / violence : signaux d'alerte supplémentaires.
+        "Drogue / violence" to listOf(
+            "drogue", "zatla", "joint", "cannabis", "cocaine", "ecstasy", "weed", "deal de",
+            "je vais me battre", "ramene un couteau", "bring a knife", "buy weed", "acheter de la drogue"
         )
     )
 
